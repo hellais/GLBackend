@@ -191,7 +191,7 @@ class TipCommentCollection(BaseHandler):
                 answer = yield CrudOperations().get_comment_list_by_wb(tip_token)
 
             self.set_status(answer['code'])
-            self.write(json.dumps(answer['data']))
+            self.write(answer['data'])
 
         except TipGusNotFound, e:
 
@@ -222,7 +222,7 @@ class TipCommentCollection(BaseHandler):
             else:
                 answer = yield CrudOperations().new_comment_by_wb(tip_token, request)
 
-            self.write(json.dumps(answer['data']))
+            self.write(answer['data'])
             self.set_status(answer['code'])
 
         except TipGusNotFound, e:
@@ -260,7 +260,7 @@ class TipReceiversCollection(BaseHandler):
             else:
                 answer = yield CrudOperations().get_receiver_list_by_wb(tip_token)
 
-            self.write(json.dumps(answer['data']))
+            self.write(answer['data'])
             self.set_status(answer['code'])
 
         except TipGusNotFound, e:

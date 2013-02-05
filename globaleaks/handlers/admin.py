@@ -100,7 +100,7 @@ class ContextsCollection(BaseHandler):
 
             # validateMessage() output!!
 
-            self.write(json.dumps(answer['data']))
+            self.write(answer['data'])
             self.set_status(answer['code'])
 
         except InvalidInputFormat, e:
@@ -267,7 +267,7 @@ class ReceiversCollection(BaseHandler):
         answer = yield CrudOperations().get_receiver_list()
         # validateMessage() output!!
 
-        self.write(json.dumps(answer['data']))
+        self.write(answer['data'])
         self.set_status(answer['code'])
 
         self.finish()
@@ -449,7 +449,7 @@ class PluginCollection(BaseHandler):
         # TODO output validation - adminPluginList
 
         self.set_status(200)
-        self.write(json.dumps(plugin_descriptive_list))
+        self.write(plugin_descriptive_list)
         self.finish()
 
 
@@ -473,7 +473,7 @@ class ProfileCollection(BaseHandler):
         answer = yield CrudOperations().get_profile_list()
         # validateMessage() output!!
 
-        self.write(json.dumps(answer['data']))
+        self.write(answer['data'])
         # TODO output validation - adminProfileList
         self.set_status(answer['code'])
         self.finish()

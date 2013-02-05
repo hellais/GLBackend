@@ -66,7 +66,7 @@ class FileInstance(BaseHandler):
 
         answer = yield FileOperations().get_files(submission_gus)
 
-        self.write(json.dumps(answer['data']))
+        self.write(answer['data'])
         self.set_status(200)
 
     @asynchronous
@@ -85,7 +85,7 @@ class FileInstance(BaseHandler):
             if 'application/json' in self.request.headers.get('Accept'):
                 self.set_header('Content-Type', 'application/json')
 
-            self.write(json.dumps(answer['data'], separators=(',',':')))
+            self.write(answer['data'], separators=(',',':'))
             self.set_status(answer['code'])
 
         except InvalidInputFormat, e:

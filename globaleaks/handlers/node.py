@@ -88,7 +88,7 @@ class ContextsCollection(BaseHandler):
         answer = yield CrudOperations().get_context_list()
 
         # output filtering TODO need to strip reserved infos
-        self.write(json.dumps(answer['data']))
+        self.write(answer['data'])
         self.set_status(answer['code'])
 
         self.finish()
@@ -113,7 +113,7 @@ class ReceiversCollection(BaseHandler):
         answer = yield CrudOperations().get_receiver_list()
 
         # output filtering TODO need to strip reserved infos
-        self.write(json.dumps(answer['data']))
+        self.write(answer['data'])
         self.set_status(answer['code'])
 
         self.finish()

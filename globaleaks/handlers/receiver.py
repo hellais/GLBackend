@@ -127,7 +127,7 @@ class ProfilesCollection(BaseHandler):
 
             answer = yield CrudOperations().get_profiles_by_receiver(receiver_token_auth)
 
-            self.write(json.dumps(answer['data']))
+            self.write(answer['data'])
             self.set_status(answer['code'])
 
         except TipGusNotFound, e: # InvalidTipAuthToken
@@ -163,7 +163,7 @@ class ConfCollection(BaseHandler):
 
             answer = yield CrudOperations().get_receiver_by_receiver(receiver_token_auth)
 
-            self.write(json.dumps(answer['data']))
+            self.write(answer['data'])
             self.set_status(answer['code'])
 
         except TipGusNotFound, e:
@@ -406,7 +406,7 @@ class TipsCollection(BaseHandler):
             answer = yield CrudOperations().get_tip_list(tip_auth_token)
 
             self.set_status(answer['code'])
-            self.write(json.dumps(answer['data']))
+            self.write(answer['data'])
 
         except TipGusNotFound, e:
 
