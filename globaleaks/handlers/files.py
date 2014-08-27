@@ -13,7 +13,7 @@ import time
 import shutil
 
 from twisted.internet import threads
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, returnValue
 from cyclone.web import StaticFileHandler
 
 from globaleaks.settings import transact, transact_ro, GLSetting, stats_counter
@@ -62,17 +62,17 @@ def register_file_db(store, uploaded_file, filepath, internaltip_id):
         raise errors.TipIdNotFound
 
     new_file = InternalFile()
-    new_file.name = uploaded_file['filename']
+    new_file.name = uploaded_file.filename
     new_file.description = ""
-    new_file.content_type = uploaded_file['content_type']
+    new_file.content_type = uploaded_file.content_type
     new_file.mark = InternalFile._marker[0] # 'not processed'
-    new_file.size = uploaded_file['body_len']
+    new_file.size = uploaded_file.length
     new_file.internaltip_id = internaltip_id
     new_file.file_path = filepath
 
     store.add(new_file)
 
-    log.debug("=> Recorded new InternalFile %s" % uploaded_file['filename'])
+    log.debug("=> Recorded new InternalFile %s" % uploaded_file.filename)
 
     return serialize_file(new_file)
 
@@ -85,16 +85,16 @@ def dump_file_fs(uploaded_file):
     """
 
     encrypted_destination = os.path.join(GLSetting.submission_path,
-                                         os.path.basename(uploaded_file['body_filepath']))
+                                         os.path.basename(uploaded_file.body.filepath))
 
     log.debug("Moving encrypted bytes %d from file [%s] %s => %s" %
-              (uploaded_file['body_len'],
-               uploaded_file['filename'],
-               uploaded_file['body_filepath'],
+              (uploaded_file.length,
+               uploaded_file.filename,
+               uploaded_file.body.filepath,
                encrypted_destination)
     )
 
-    shutil.move(uploaded_file['body_filepath'], encrypted_destination)
+    shutil.move(uploaded_file.body.filepath, encrypted_destination)
     return encrypted_destination
 
 
@@ -135,10 +135,14 @@ class FileHandler(BaseHandler):
         # more than 1), because all files are delivered in the same time.
         start_time = time.time()
 
-        uploaded_file = self.request.body
+        uploaded_file = self.request.files.values()[0][0]
+        if not uploaded_file.finished:
+            self.write({'files': []})
+            returnValue(None)
 
-        uploaded_file['body'].avoid_delete()
-        uploaded_file['body'].close()
+        print "Closing..."
+        uploaded_file.body.avoid_delete()
+        uploaded_file.body.close()
 
         try:
             # First: dump the file in the filesystem,
@@ -156,6 +160,7 @@ class FileHandler(BaseHandler):
 
         registered_file['elapsed_time'] = time.time() - start_time
         result_list.append(registered_file)
+        result_list[0]['error'] = 0
 
         self.set_status(201) # Created
         self.write({'files': result_list})

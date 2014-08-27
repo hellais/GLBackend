@@ -15,8 +15,6 @@ import re
 import sys
 import logging
 
-from StringIO import StringIO
-from cgi import parse_header
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 
 from twisted.python.failure import Failure
@@ -24,16 +22,13 @@ from twisted.internet.defer import inlineCallbacks
 from twisted.internet import fdesc
 
 from cyclone.web import RequestHandler, HTTPError, HTTPAuthenticationRequired, StaticFileHandler, RedirectHandler
-from cyclone.httpserver import HTTPConnection, HTTPRequest, _BadRequestException
-from cyclone import escape, httputil
-from cyclone.escape import native_str, parse_qs_bytes
+from cyclone import escape
 
 from globaleaks.jobs.statistics_sched import alarm_level
 from globaleaks.utils.utility import log, log_remove_escapes, log_encode_html, datetime_now, deferred_sleep
 from globaleaks.utils.mailutils import mail_exception
 from globaleaks.settings import GLSetting
 from globaleaks.rest import errors
-from globaleaks.security import GLSecureTemporaryFile
 
 def validate_host(host_key):
     """
@@ -57,140 +52,6 @@ def validate_host(host_key):
               (host_key, GLSetting.accepted_hosts))
 
     return False
-
-
-class GLHTTPServer(HTTPConnection):
-    file_upload = False
-
-    def __init__(self):
-        self.uploaded_file = {}
-
-    def rawDataReceived(self, data):
-        if self.content_length is not None:
-            data, rest = data[:self.content_length], data[self.content_length:]
-            self.content_length -= len(data)
-        else:
-            rest = ''
-
-        self._contentbuffer.write(data)
-        if self.content_length == 0 and self._contentbuffer is not None:
-            tmpbuf = self._contentbuffer
-            self.content_length = self._contentbuffer = None
-            self.setLineMode(rest)
-            tmpbuf.seek(0, 0)
-            if self.file_upload:
-                self._on_request_body(self.uploaded_file)
-                self.file_upload = False
-                self.uploaded_file = {}
-            else:
-                self._on_request_body(tmpbuf.read())
-
-    def _on_headers(self, data):
-        try:
-            data = native_str(data.decode("latin1"))
-            eol = data.find("\r\n")
-            start_line = data[:eol]
-            try:
-                method, uri, version = start_line.split(" ")
-            except ValueError:
-                raise _BadRequestException("Malformed HTTP request line")
-            if not version.startswith("HTTP/"):
-                raise _BadRequestException(
-                    "Malformed HTTP version in HTTP Request-Line")
-            headers = httputil.HTTPHeaders.parse(data[eol:])
-            self._request = HTTPRequest(
-                connection=self, method=method, uri=uri, version=version,
-                headers=headers, remote_ip=self._remote_ip)
-
-            self.content_length = int(headers.get("Content-Length", 0))
-
-            # we always use secure temporary files in case of large json or file uploads
-            if self.content_length < 100000 and self._request.headers.get("Content-Disposition") is None:
-                self._contentbuffer = StringIO('')
-            else:
-                self._contentbuffer = GLSecureTemporaryFile(GLSetting.tmp_upload_path)
-
-            if headers.get("Expect") == "100-continue":
-                self.transport.write("HTTP/1.1 100 (Continue)\r\n\r\n")
-
-            c_d_header = self._request.headers.get("Content-Disposition")
-            if c_d_header is not None:
-                key, pdict = parse_header(c_d_header)
-                if key != 'attachment' or 'filename' not in pdict:
-                    raise _BadRequestException("Malformed Content-Disposition header")
-
-                self.file_upload = True
-                self.uploaded_file['filename'] = pdict['filename']
-                self.uploaded_file['content_type'] = self._request.headers.get("Content-Type",
-                                                                               'application/octet-stream')
-
-                self.uploaded_file['body'] = self._contentbuffer
-                self.uploaded_file['body_len'] = int(self.content_length)
-                self.uploaded_file['body_filepath'] = self._contentbuffer.filepath
-
-            megabytes = int(self.content_length) / (1024 * 1024)
-
-            if self.file_upload:
-                limit_type = "upload"
-                limit = GLSetting.memory_copy.maximum_filesize
-            else:
-                limit_type = "json"
-                limit = 1000000 # 1MB fixme: add GLSetting.memory_copy.maximum_jsonsize
-                # is 1MB probably too high. probably this variable must be in kB
-
-            # less than 1 megabytes is always accepted
-            if megabytes > limit:
-                log.err("Tried %s request larger than expected (%dMb > %dMb)" %
-                        (limit_type,
-                         megabytes,
-                         limit))
-
-                # In HTTP Protocol errors need to be managed differently than handlers
-                raise errors.HTTPRawLimitReach
-
-            if self.content_length > 0:
-                self.setRawMode()
-                return
-            elif self.file_upload:
-                self._on_request_body(self.uploaded_file)
-                self.file_upload = False
-                self.uploaded_file = {}
-                return
-
-            self.request_callback(self._request)
-        except Exception as exception:
-            log.msg("Malformed HTTP request from %s: %s" % (self._remote_ip, exception))
-            log.exception(exception)
-            if self._request:
-                self._request.finish()
-            if self.transport:
-                self.transport.loseConnection()
-
-    def _on_request_body(self, data):
-        try:
-            self._request.body = data
-            content_type = self._request.headers.get("Content-Type", "")
-            if self._request.method in ("POST", "PATCH", "PUT"):
-                if content_type.startswith("application/x-www-form-urlencoded") and self.content_length < GLSetting.www_form_urlencoded_maximum_size:
-                    arguments = parse_qs_bytes(native_str(self._request.body))
-                    for name, values in arguments.iteritems():
-                        values = [v for v in values if v]
-                        if values:
-                            self._request.arguments.setdefault(name,
-                                                               []).extend(values)
-                elif content_type.startswith("application/x-www-form-urlencoded"):
-                    raise errors.InvalidInputFormat("content type application/x-www-form-urlencoded not supported")
-                elif content_type.startswith("multipart/form-data"):
-                    raise errors.InvalidInputFormat("content type multipart/form-data not supported")
-            self.request_callback(self._request)
-        except Exception as exception:
-            log.msg("Malformed HTTP request from %s: %s" % (self._remote_ip, exception))
-            log.exception(exception)
-            if self._request:
-                self._request.finish()
-            if self.transport:
-                self.transport.loseConnection()
-
 
 class BaseHandler(RequestHandler):
     xsrf_cookie_name = "XSRF-TOKEN"
@@ -367,7 +228,7 @@ class BaseHandler(RequestHandler):
 
         else:
             raise errors.InvalidInputFormat("invalid json massage: expected dict or list")
-            
+
 
     @staticmethod
     def validate_message(message, message_template):
@@ -605,6 +466,8 @@ class BaseHandler(RequestHandler):
                 return self.send_error(e.status_code, exception=e)
         else:
             log.err("Uncaught exception %s %s %s" % (exc_type, exc_value, exc_tb))
+            import traceback
+            traceback.print_tb(exc_tb)
             if GLSetting.http_log:
                 log.msg(e)
             mail_exception(exc_type, exc_value, exc_tb)
